@@ -7,6 +7,6 @@ Creates matrix with :
 
 Start params  
 ```bash
-python user-journey-conversion-attribution-matrix.py --help
+python3 user-journey-conversion-attribution-matrix.py --help
 ```
 DS-instance execution path `/home/ubuntu/conversion-attribution/user-journey-conversion-attribution-matrix.py`
