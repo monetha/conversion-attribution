@@ -93,7 +93,7 @@ def main():
 
     coversion_users = res_sliced[res_sliced.is_buy_session ==
                                 1]['customer_profile_id'].unique()
-    atb_customers = res_sliced[sessions.customer_profile_id.isin(
+    atb_customers = res_sliced[res_sliced.customer_profile_id.isin(
         coversion_users
     )]
     atb_customers.utm_campaign.fillna('None', inplace=True)
