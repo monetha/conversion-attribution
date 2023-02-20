@@ -85,7 +85,7 @@ def make_proxy_chains(df: DataFrame, days_before_proxy: int):
         time_before = df_temp.iloc[-1].session_start - Timedelta(days=days_before_proxy)
         
         for index_group in get_groups(df_temp, days_before_proxy):
-            df.loc[df.ses_num.isin(index_group), 'chain'] = arange(
+            df.loc[df.ses_num.isin(index_group), 'number_in_chain'] = arange(
                 1, len(index_group)+1)
         
         df_temp_proxy_numbers = df_temp[(df_temp['session_start'] > time_before)].iloc[:-1]['ses_num']
@@ -96,6 +96,6 @@ def make_proxy_chains(df: DataFrame, days_before_proxy: int):
     if df_after_proxy_chain.shape[0]:
         
         for index_group in get_groups(df_after_proxy_chain, days_before_proxy):
-            df.loc[df.ses_num.isin(index_group), 'chain'] = arange(
+            df.loc[df.ses_num.isin(index_group), 'number_in_chain'] = arange(
                 1, len(index_group)+1)
     return df
