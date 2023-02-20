@@ -8,7 +8,7 @@ import argparse
 from dotenv import load_dotenv
 
 from utils.functools import applyParallel
-from utils.conv_atr import slice_data, mark_chain
+from utils.conv_atr import make_proxy_chains, slice_data,mark_chain
 from user_journey import DataPreparer, SessionMarker
 
 pd.options.mode.chained_assignment = None
@@ -60,9 +60,14 @@ def main():
                         params={"start_date": start_date_user_journey,
                                 "end_date": end_date, 'account_id': account_id}
                         )
-    # CHANGED IN 'sql/user-journey.sql'
-    # sessions['events_number'] = sessions['actions_count']
 
+    sessions_slice = sessions[(sessions['session_start'] >= start_date)
+                    & (sessions['session_start'] < end_date)]
+    
+    coversion_users = sessions_slice[sessions_slice.is_buy_session ==
+                                1]['customer_profile_id'].unique()
+    
+    sessions = sessions[sessions['customer_profile_id'].isin(coversion_users)]
 
     #Prepare user journey phases
     sessions = DataPreparer.process(
@@ -70,40 +75,34 @@ def main():
 
     sm = SessionMarker(356)
     sessions = sm.mark_bounce(sessions)
-    sessions['session_type'] = None
-    res = applyParallel(sessions.groupby(
+    sessions = sessions.assign(session_type=None)
+    sessions = applyParallel(sessions.groupby(
         'customer_profile_id'), sm.mark_by_group_id)
 
 
     #Slice sessions for matrix calculation
-    res_sliced = res[(res['session_start'] >= start_date)
-                    & (res['session_start'] < end_date)]
-    res_sliced = res_sliced.assign(is_proxy=0)
-    res_sliced = res_sliced.groupby('customer_profile_id', group_keys=False).apply(
-        slice_data, DAYS_BEFORE_PROXY)
+    sessions_conversion = sessions[(sessions['session_start'] >= start_date)
+                    & (sessions['session_start'] < end_date)]
+    sessions_conversion = sessions_conversion.assign(is_proxy=0)
+    sessions_conversion = sessions_conversion.assign(chain=None)
 
     #process for conversion attribution
-    res_sliced['session_end_shifted'] = res_sliced.groupby('customer_profile_id')[
-        'session_end'].shift(-1)
-    res_sliced['session_start_shifted'] = res_sliced.groupby(
-        'customer_profile_id')['session_start'].shift(-1)
-    res_sliced['interval_between'] = (
-        res_sliced['session_start_shifted'] - res_sliced['session_end']).dt.days
-    res_sliced.loc[res_sliced['interval_between'] < 0, 'interval_between'] = 0
 
-    coversion_users = res_sliced[res_sliced.is_buy_session ==
-                                1]['customer_profile_id'].unique()
-    atb_customers = res_sliced[res_sliced.customer_profile_id.isin(
-        coversion_users
-    )]
-    atb_customers.utm_campaign.fillna('None', inplace=True)
+    sessions_conversion['session_end_shifted'] = sessions_conversion['session_end'].shift(1)
+    sessions_conversion['interval_between_end'] = (sessions_conversion['session_start'] - sessions_conversion['session_end_shifted']).dt.days
+    sessions_conversion.loc[sessions_conversion.interval_between < 0, 'interval_between'] = 0 
 
+
+    sessions_conversion.utm_campaign.fillna('None', inplace=True)
+
+    sessions_conversion['ses_num'] = sessions_conversion.groupby('customer_profile_id').cumcount() +1 
+    sessions_conversion = sessions_conversion.assign(is_proxy=0)
+    sessions_conversion = sessions_conversion.assign(chain=None)
     #Mark chains
-    res_atb = atb_customers.groupby('customer_profile_id', group_keys=False).apply(
-        mark_chain, DAYS_BEFORE_PROXY)
+    sessions_conversion = sessions_conversion.groupby('customer_profile_id').apply(make_proxy_chains,DAYS_BEFORE_PROXY)
 
     #Create table
-    session_number_df = res_atb.groupby(
+    session_number_df = sessions_conversion.groupby(
         ['number_in_chain', 'session_type']).size().unstack()
     session_number_df = session_number_df.rename(
         columns=sm._SessionMarker__inverse_map)
@@ -112,7 +111,6 @@ def main():
 
     session_number_df.to_sql('journey_attribution',
                             con=engine_save, if_exists='append', schema='data')
-
 
 if __name__ == "__main__": 
 	main() 
