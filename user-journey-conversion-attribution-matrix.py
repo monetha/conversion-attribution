@@ -87,9 +87,11 @@ def main():
     sessions_conversion = sessions_conversion.assign(chain=None)
 
     #process for conversion attribution
+
     sessions_conversion['session_end_shifted'] = sessions_conversion['session_end'].shift(1)
     sessions_conversion['interval_between_end'] = (sessions_conversion['session_start'] - sessions_conversion['session_end_shifted']).dt.days
     sessions_conversion.loc[sessions_conversion.interval_between < 0, 'interval_between'] = 0 
+
 
     sessions_conversion.utm_campaign.fillna('None', inplace=True)
 
