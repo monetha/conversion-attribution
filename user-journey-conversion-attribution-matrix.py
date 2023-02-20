@@ -8,7 +8,7 @@ import argparse
 from dotenv import load_dotenv
 
 from utils.functools import applyParallel
-from utils.conv_atr import slice_data, mark_chain
+from utils.conv_atr import make_proxy_chains, slice_data,mark_chain
 from user_journey import DataPreparer, SessionMarker
 
 pd.options.mode.chained_assignment = None
@@ -60,8 +60,6 @@ def main():
                         params={"start_date": start_date_user_journey,
                                 "end_date": end_date, 'account_id': account_id}
                         )
-    # CHANGED IN 'sql/user-journey.sql'
-    # sessions['events_number'] = sessions['actions_count']
 
 
     #Prepare user journey phases
@@ -79,17 +77,12 @@ def main():
     res_sliced = res[(res['session_start'] >= start_date)
                     & (res['session_start'] < end_date)]
     res_sliced = res_sliced.assign(is_proxy=0)
-    res_sliced = res_sliced.groupby('customer_profile_id', group_keys=False).apply(
-        slice_data, DAYS_BEFORE_PROXY)
+    res_sliced = res_sliced.assign(chain=None)
 
     #process for conversion attribution
-    res_sliced['session_end_shifted'] = res_sliced.groupby('customer_profile_id')[
-        'session_end'].shift(-1)
-    res_sliced['session_start_shifted'] = res_sliced.groupby(
-        'customer_profile_id')['session_start'].shift(-1)
-    res_sliced['interval_between'] = (
-        res_sliced['session_start_shifted'] - res_sliced['session_end']).dt.days
-    res_sliced.loc[res_sliced['interval_between'] < 0, 'interval_between'] = 0
+    res_sliced['session_end_shifted'] = res_sliced['session_end'].shift(1)
+    res_sliced['interval_between_end'] = (res_sliced['session_start'] - res_sliced['session_end_shifted']).dt.days
+    res_sliced.loc[res_sliced.interval_between < 0, 'interval_between'] = 0 
 
     coversion_users = res_sliced[res_sliced.is_buy_session ==
                                 1]['customer_profile_id'].unique()
@@ -98,13 +91,15 @@ def main():
     )]
     atb_customers.utm_campaign.fillna('None', inplace=True)
 
+    atb_customers['ses_num'] = atb_customers.groupby('customer_profile_id').cumcount() +1 
+    atb_customers = atb_customers.assign(is_proxy=0)
+    atb_customers = atb_customers.assign(chain=None)
     #Mark chains
-    res_atb = atb_customers.groupby('customer_profile_id', group_keys=False).apply(
-        mark_chain, DAYS_BEFORE_PROXY)
+    res_atb = atb_customers.groupby('customer_profile_id').apply(make_proxy_chains,DAYS_BEFORE_PROXY)
 
     #Create table
     session_number_df = res_atb.groupby(
-        ['number_in_chain', 'session_type']).size().unstack()
+        ['chain', 'session_type']).size().unstack()
     session_number_df = session_number_df.rename(
         columns=sm._SessionMarker__inverse_map)
     session_number_df['total'] = session_number_df.sum(axis=1)
@@ -112,7 +107,6 @@ def main():
 
     session_number_df.to_sql('journey_attribution',
                             con=engine_save, if_exists='append', schema='data')
-
 
 if __name__ == "__main__": 
 	main() 

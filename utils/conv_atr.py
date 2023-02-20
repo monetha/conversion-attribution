@@ -70,3 +70,32 @@ def slice_data(df: DataFrame, days_before_proxy: int):
             continue
         df.loc[df_temp.index, 'is_proxy'] = 1
     return df
+
+
+def make_proxy_chains(df: DataFrame, days_before_proxy: int):
+    '''
+    Sets proxy sessions and marks chain numbers.
+    '''
+    atb_index = [0] + list(df[df.is_buy_session == 1].ses_num.values)
+    for current_index, next_index in current_next(atb_index):
+        if next_index is None:
+            break
+        
+        df_temp = df[(df.ses_num > current_index) & (df.ses_num <= next_index)]
+        time_before = df_temp.iloc[-1].session_start - Timedelta(days=days_before_proxy)
+        
+        for index_group in get_groups(df_temp, days_before_proxy):
+            df.loc[df.ses_num.isin(index_group), 'chain'] = arange(
+                1, len(index_group)+1)
+        
+        df_temp_proxy_numbers = df_temp[(df_temp['session_start'] > time_before)].iloc[:-1]['ses_num']
+        df.loc[df['ses_num'].isin(df_temp_proxy_numbers),'is_proxy'] = 1
+
+        
+    df_after_proxy_chain = df[df.ses_num > atb_index[-1]]
+    if df_after_proxy_chain.shape[0]:
+        
+        for index_group in get_groups(df_after_proxy_chain, days_before_proxy):
+            df.loc[df.ses_num.isin(index_group), 'chain'] = arange(
+                1, len(index_group)+1)
+    return df
