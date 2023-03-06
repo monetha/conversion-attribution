@@ -1,5 +1,5 @@
 from numpy import arange
-from pandas import Timedelta, DataFrame
+from pandas import Timedelta, DataFrame, concat
 
 from .functools import current_next
 
@@ -76,6 +76,7 @@ def make_proxy_chains(df: DataFrame, days_before_proxy: int):
     '''
     Sets proxy sessions and marks chain numbers.
     '''
+    current_chain_number = 0
     atb_index = [0] + list(df[df.is_buy_session == 1].ses_num.values)
     for current_index, next_index in current_next(atb_index):
         if next_index is None:
@@ -87,7 +88,9 @@ def make_proxy_chains(df: DataFrame, days_before_proxy: int):
         for index_group in get_groups(df_temp, days_before_proxy):
             df.loc[df.ses_num.isin(index_group), 'number_in_chain'] = arange(
                 1, len(index_group)+1)
-        
+            df.loc[df.ses_num.isin(index_group), 'chain'] = current_chain_number
+            current_chain_number+=1
+
         df_temp_proxy_numbers = df_temp[(df_temp['session_start'] > time_before)].iloc[:-1]['ses_num']
         df.loc[df['ses_num'].isin(df_temp_proxy_numbers),'is_proxy'] = 1
 
@@ -98,4 +101,19 @@ def make_proxy_chains(df: DataFrame, days_before_proxy: int):
         for index_group in get_groups(df_after_proxy_chain, days_before_proxy):
             df.loc[df.ses_num.isin(index_group), 'number_in_chain'] = arange(
                 1, len(index_group)+1)
+            df.loc[df.ses_num.isin(index_group), 'chain'] =current_chain_number
+            current_chain_number+=1
+
     return df
+
+def make_same_column(heatmap_data):
+    new_data = []
+    for i in heatmap_data.index:
+        try:
+            new_data.append(heatmap_data.loc[i,i])
+        except:
+            new_data.append(0)
+    heatmap_data['same_source'] = new_data
+
+    heatmap_data = concat([heatmap_data[['same_source']], heatmap_data.drop(columns = ['same_source'])],axis=1)
+    return heatmap_data
