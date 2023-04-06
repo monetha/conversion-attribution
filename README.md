@@ -20,4 +20,11 @@ Start params
 ```bash
 python3 source_medium_heatmap.py --help
 ```
+
+*Production params* `--only_conversion=True --proxy_days=0`  
+Example
+```bash
+python3 source_medium_heatmap.py --account_id={ACCOUNT_ID} --start_date={START_DATE} --end_date={END_DATE} --only_conversion=True --proxy_days=0
+```
+
 DS-instance execution path `/home/ubuntu/conversion-attribution/source_medium_heatmap.py`
