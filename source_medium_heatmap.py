@@ -17,9 +17,11 @@ DAYS_BEFORE_PROXY_DEFAULT = 30
 parser = argparse.ArgumentParser()
 parser.add_argument('--account_id', type=int, required=True)
 parser.add_argument('--start_date', type=str, required=True,
-                    help="Start date of sessions for conversion attribution markup")
+                    help="Start date of sessions_conversion for conversion attribution markup")
 parser.add_argument('--end_date', type=str, required=True,
-                    help="End date of sessions for conversion attribution markup")
+                    help="End date of sessions_conversion for conversion attribution markup")
+parser.add_argument('--only_conversion', type=bool, required=True,
+                    help="Count only conversion chains. Filters out the chains without conversion session in the end of the chain.")
 parser.add_argument('--proxy_days', type=int, required=False,
                     default=DAYS_BEFORE_PROXY_DEFAULT,
                     help="Number of days before proxy session is valid. Default is 30.")
@@ -30,6 +32,7 @@ args = parser.parse_args()
 account_id = args.account_id
 start_date = args.start_date
 end_date = args.end_date
+only_conversion = args.only_conversion
 DAYS_BEFORE_PROXY = args.proxy_days
 
 load_dotenv('.env')
@@ -64,28 +67,27 @@ def main():
     
     sessions = sessions[sessions['customer_profile_id'].isin(coversion_users)]
 
+    sessions_conversion = sessions.sort_values(by=['created']).reset_index(drop=True)
 
-
-    #Slice sessions for matrix calculation
-    sessions_conversion = sessions[(sessions['session_start'] >= start_date)
-                    & (sessions['session_start'] < end_date)]
-    sessions_conversion = sessions_conversion.assign(is_proxy=0)
-    sessions_conversion = sessions_conversion.assign(chain=None)
 
     #process for conversion attribution
-
-    sessions_conversion['session_end_shifted'] = sessions_conversion['session_end'].shift(1)
-    sessions_conversion['interval_between'] = (sessions_conversion['session_start'] - sessions_conversion['session_end_shifted']).dt.days
-    sessions_conversion.loc[sessions_conversion.interval_between < 0, 'interval_between'] = 0 
+    if DAYS_BEFORE_PROXY:
+        sessions_conversion['session_end_shifted'] = sessions_conversion['session_end'].shift(1)
+        sessions_conversion['interval_between'] = (sessions_conversion['session_start'] - sessions_conversion['session_end_shifted']).dt.days
+        sessions_conversion.loc[sessions_conversion.interval_between < 0, 'interval_between'] = 0 
 
 
     sessions_conversion.utm_campaign.fillna('None', inplace=True)
 
     sessions_conversion['ses_num'] = sessions_conversion.groupby('customer_profile_id').cumcount() +1 
     sessions_conversion = sessions_conversion.assign(is_proxy=0)
-    sessions_conversion = sessions_conversion.assign(chain=None)
+    sessions_conversion = sessions_conversion.assign(chain=0)
     #Mark chains
     sessions_conversion = sessions_conversion.groupby('customer_profile_id').apply(make_proxy_chains,DAYS_BEFORE_PROXY)
+
+    if only_conversion:
+        sessions_conversion = sessions_conversion.groupby(['customer_profile_id', 'chain']).filter(lambda x : x.shape[0] != 1 )
+        sessions_conversion = sessions_conversion.groupby(['customer_profile_id', 'chain']).filter(lambda x : x.is_buy_session.sum() > 0  )
 
     #Create heatmap
 
@@ -116,7 +118,7 @@ def main():
     heatmap_data.insert(loc=0, column='medium', value= heatmap_data['source_medium_campaign_first'].apply(lambda x : x.split('/')[1]))
     heatmap_data.insert(loc=0, column='source', value=heatmap_data['source_medium_campaign_first'].apply(lambda x : x.split('/')[0]))
     heatmap_data.drop('source_medium_campaign_first', inplace=True, axis=1)
-    
+
     #TODO save to db instead file system
     # heatmap_data.to_sql('journey_attribution',
     #                         con=engine_save, if_exists='append', schema='data')
